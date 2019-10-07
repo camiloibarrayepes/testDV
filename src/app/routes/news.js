@@ -1,93 +1,137 @@
 const dbConnection = require('../../config/dbconnection');
-var fs = require('fs');
-
+let fs = require('fs');
+const digits_only = string => [...string].every(c => '0123456789'.includes(c));
+var newDataArray = []
+var count = 0
 
 module.exports = app => {
   
   app.use(require('skipper')());
   const connection = dbConnection();
-  var newDataArray = []
-  var count = 0
+  
+  app.get('/', (req, res) => {
+      connection.query("SELECT * FROM companies", (err, resultCompanies) => {
+        console.log("resultCompanies", resultCompanies)
+        res.render('news/index', {
+          companies: resultCompanies
+        });
+      })
+  });
 
-
-  app.get('/new_file', (req, res) => {
+  app.post('/new_file', (req, res) => {
+      console.log("id_company", req.body.id_company)
       res.render('news/new_file', {
-        title: "New file"
+        title: "New file",
+        id_company: req.body.id_company
       });
   });
 
   app.post('/upload', function (req, res) {
 
-
-    const { checkbox_nombres, checkbox_apellidos, checkbox_telefonos, checkbox_direcciones } = req.body;
+    const { add_kw, add_sp_ch, id_company, checkbox_nombres, checkbox_apellidos, checkbox_telefonos, checkbox_direcciones } = req.body;
 
     req.file('avatar').upload(function (err, uploadedFiles) {
   
     if (err) return res.send(500, err);
-      /*var respUpload = res.json({
-        message: uploadedFiles.length + ' file(s) uploaded successfully!',
-        files: uploadedFiles
-      });*/
       
-      var urlDirUpload = uploadedFiles[0].fd
-      console.log("urlDirUpload", urlDirUpload)
-
+      let urlDirUpload = uploadedFiles[0].fd
+      
       //TRY TO SAVE IN DB
       try {
         const data = fs.readFileSync(urlDirUpload, 'utf8')
-          
-        //Quitar espacios
-        let respuesta = data.split(/\r?\n/g)
-          
-        respuesta.forEach(element => {
 
-            
+        let init_separators = ["[", "&", "." , "," , "%", "]"]
+        
+        //add news special charactes if exists
+        init_separators.splice(2, 0, add_sp_ch);
+        let final_separators = init_separators.join("").toString();
+        final_separators = new RegExp(final_separators)
+        console.log("final_separators",final_separators)
+
+        final_separators = add_kw == "" ? final_separators : add_kw 
+      
+        //check if exists keyword
+        //final_separators = add_kw != undefined ? add_kw : final_separators
+        
+        //remove spaces
+        let response_data = data.split(/\r?\n/g)
+          
+        response_data.forEach(element => {  
+            console.log("ELEMENT", element)  
             count += 1
-            // split one more time
-            const data = element.split(/[.,%]/)
+            let data = element.split(final_separators)
+            console.log("DATA", data)
 
-            
-            //Eliminamos datos como Edad, o erroneos
-            for(var i=0; i<data.length; i++){
-              if(data[i].trim().length<3){
-                //posiblemente edad o dato no relevante
-                console.log("ENTRA AQUI", data[i].trim())
-                data.splice(i,1); 
-              }
+            if(data.length>4){
+              //Remove data like ages or error data
+              let filteredArr = data.filter(item => item.trim().toString().length > 4);
+              data=filteredArr
             }
+            
+            /*================ CHECK MULTIPLES PHONES  ===================*/
+            
+            //Create new array only wit numbers (phones)
+            let onlyNumbers = data.filter(item => digits_only(item.trim().toString()) );
+            let onlyNumbersLength = onlyNumbers.filter(item => item.trim().toString().length > 4);
+            
+            //join and remove spaces
+            let onlyNumbersLengthJoin = onlyNumbersLength.join('-').replace(/ /g, "")
 
+            //create new array without numbers
+            let noNumbers = data.filter(item => !digits_only(item.trim().toString()) );
+ 
+            //insert var of numbers to array in pos [2]
+            noNumbers.splice(2, 0, onlyNumbersLengthJoin);
+
+            /*================ CHECK MULTIPLES ADDRESSES  ===================*/
+
+            //New array with addresses
+            wordsInAddres = ["edificio", "carrera", "barrio", "comuna", "calle", "cll", "cra", "kra", "avenida"]
+            let possibleAddres = noNumbers.filter(item => (wordsInAddres.some(el => item.toString().toLowerCase().includes(el) )));
+            
+            //join and remove spaces
+            let onlyAddressesJoin= possibleAddres.join(' ; ')
+
+            //create new array without directions
+            let noAddressesArray = noNumbers.filter(item => (!wordsInAddres.some(el => item.toString().toLowerCase().includes(el))));
+
+            noAddressesArray.splice(3, 0, onlyAddressesJoin)
+            newdata = noAddressesArray 
 
             newDataArray.push({
-              nombres: checkbox_nombres.length==1?"":data[0],
-              apellidos: checkbox_apellidos.length==1?"":data[1],
-              telefonos: checkbox_telefonos.length==1?"":data[2],
-              direcciones: checkbox_direcciones.length==1?"":data[3]
+              id_company: id_company,
+              nombres: checkbox_nombres==undefined?"":newdata[0],
+              apellidos: checkbox_apellidos==undefined?"":newdata[1],
+              telefonos: checkbox_telefonos==undefined?"":newdata[2],
+              direcciones: checkbox_direcciones==undefined?"":newdata[3],
+              last_update: new Date()
             })
         });
     
-          //console.log("newDataArray", newDataArray.length)
           newDataArray.forEach(element => {
-    
-          //se inserta en la base de datos iterando sobre el array de la respuesta
-          const { nombres, apellidos, telefonos, direcciones } = element;
+          console.log("element",element)
+          //insert in the BD iterating the response array
+          const { id_company, nombres, apellidos, telefonos, direcciones, last_update } = element;
           connection.query('INSERT INTO campaign SET ? ',
             {
+              id_company,
               nombres,
               apellidos,
               telefonos,
-              direcciones
+              direcciones,
+              last_update
             }
           , (err, result) => {
-            //res.redirect('/');
+            console.log("ERROR", err)
           });
-          
         });
     
-        if(count>=respuesta.length){
-          res.redirect('/');
-        }else{
-          res.send(newDataArray)
-        }
+        
+        if(count>=response_data.length){
+          newDataArray=[]
+          count=0
+          res.redirect('info/'+id_company);
+        }else{ res.send(newDataArray)}
         
     
         } catch (err) {
@@ -99,55 +143,21 @@ module.exports = app => {
   });
 
 
-  app.get('/prueba', (req, res) => {
-    try {
-    const data = fs.readFileSync('/Users/camiloandresibarrayepes/Documents/YEPETO/PersonalProjects/Pruebas/DavinciTest/src/prueba/prueba.txt', 'utf8')
-      
-    //Quitar espacios
-    let respuesta = data.split(/\r?\n/g)
-      
-    respuesta.forEach(element => {
-        // split one more time
-        const data = element.split(/[.,%]/)
-        newDataArray.push({
-          nombres: data[0],
-          apellidos: data[1],
-          telefonos: data[2],
-          direcciones: data[3]
-        })
-    });
-
-      //console.log("newDataArray", newDataArray.length)
-      newDataArray.forEach(element => {
-
-      //se inserta en la base de datos iterando sobre el array de la respuesta
-      const { nombres, apellidos, telefonos, direcciones } = element;
-      connection.query('INSERT INTO campaign SET ? ',
-        {
-          nombres,
-          apellidos,
-          telefonos,
-          direcciones
-        }
-      , (err, result) => {
-        //res.redirect('/');
-      });
-      
-    });
-
-    res.send(newDataArray)
-
-    } catch (err) {
-      res.send(err)
-      console.error(err)
-    }
-  });
-
-  app.get('/', (req, res) => {
-    connection.query('SELECT * FROM campaign', (err, result) => {
-      res.render('news/news', {
-        news: result
-      });
+  app.get('/info/:id_company', (req, res) => {
+    console.log("REQ.BODY", req.params.id_company)
+    let id_company = req.params.id_company
+    connection.query("SELECT * FROM campaign WHERE id_company='"+id_company+"' ORDER BY id DESC" , (err, resultCampaign) => {
+      connection.query("SELECT * FROM companies WHERE id='"+id_company+"' ORDER BY id DESC", (err, resultCompanies) => {
+        //console.log("resultCompanies", resultCompanies)
+        //console.log("resultCampaign", resultCampaign)
+        console.log("resultCampaign",resultCampaign)
+        res.render('news/news', {
+          news: resultCampaign,
+          companies_info: resultCompanies,
+          last_update: formatDate(resultCampaign[0].last_update),
+          number_registers: resultCampaign.length
+        });
+      })
     });
   });
 
@@ -156,6 +166,7 @@ module.exports = app => {
     const { nombres, apellidos, telefonos, direcciones } = req.body;
     connection.query('INSERT INTO campaign SET ? ',
       {
+        id_company,
         nombres,
         apellidos,
         telefonos,
@@ -166,3 +177,11 @@ module.exports = app => {
     });
   });
 };
+
+//Functions
+
+function formatDate(date) {
+  let event = new Date(date);
+  const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  return event.toLocaleDateString('en-US', options);
+}

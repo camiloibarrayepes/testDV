@@ -18,6 +18,13 @@
                 <div class="col-md-6 mt-4 card" style="margin-bottom: 30px">
                     <!--<form class="card-body" action="/news" method="post">-->
                     <h3 class="card-title">Add <%= title %></h3>
+                    <div id="labelLoad" style="display:none">
+                        Cargando...
+                        <img 
+                            height="120px" 
+                            width="170px" 
+                            src="https://upload.wikimedia.org/wikipedia/commons/b/b1/Loading_icon.gif">    
+                    </div>
                     <hr>
                     <form id="formUpload" class="md-form" action="/upload" method="post" enctype="multipart/form-data">
                         <div class="file-field">
@@ -82,13 +89,6 @@
                         <input onclick="myFunction()" value="Send" type="submit" class="btn btn-primary">
                     </form><br>
                     <a href="/info/<%= id_company %>">View previous registers</a>
-                    <div id="labelLoad" style="display:none">
-                        Cargando...
-                        <img 
-                            height="120px" 
-                            width="170px" 
-                            src="https://upload.wikimedia.org/wikipedia/commons/b/b1/Loading_icon.gif">    
-                    </div>
               </div>
               <div class="col-sm">
               </div>
